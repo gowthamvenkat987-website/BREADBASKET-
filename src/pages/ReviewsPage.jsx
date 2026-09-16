@@ -18,17 +18,18 @@ export default function ReviewsPage() {
   const { reviews, addReview } = useAdmin();
   const { showToast } = useToast();
 
-  const [filterRating, setFilterRating] = useState('all'); // 'all', 5, 4, 3, 2, 1
+  const [filterRating, setFilterRating] = useState('all'); // 'all', 5, 4, 3, 2, 1, 'text-only'
   const [modalOpen, setModalOpen] = useState(false);
 
   // Review Form State
   const [name, setName] = useState('');
   const [location, setLocation] = useState('Vijayawada');
-  const [rating, setRating] = useState(5);
+  const [rating, setRating] = useState('5'); // '5', '4', '3', '2', '1', 'none'
   const [cakeOrdered, setCakeOrdered] = useState('');
   const [reviewText, setReviewText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmitReview = (e) => {
+  const handleSubmitReview = async (e) => {
     e.preventDefault();
 
     if (!name.trim() || !reviewText.trim()) {
@@ -36,22 +37,36 @@ export default function ReviewsPage() {
       return;
     }
 
-    addReview({
-      author: name,
-      location,
-      rating: Number(rating),
-      cakeOrdered: cakeOrdered || 'Bakery Selection',
-      review: reviewText,
-    });
+    setSubmitting(true);
+    try {
+      const parsedRating = rating === 'none' ? null : Number(rating);
 
-    setModalOpen(false);
-    setName('');
-    setReviewText('');
-    setCakeOrdered('');
+      await addReview({
+        author: name.trim(),
+        customer_name: name.trim(),
+        location: location.trim(),
+        rating: parsedRating,
+        cakeOrdered: cakeOrdered.trim() || null,
+        review: reviewText.trim(),
+        review_text: reviewText.trim(),
+        review_date: 'Just now',
+      });
+
+      setModalOpen(false);
+      setName('');
+      setReviewText('');
+      setCakeOrdered('');
+      setRating('5');
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const filteredReviews = reviews.filter((r) => {
     if (filterRating === 'all') return true;
+    if (filterRating === 'text-only') return r.rating === null || r.rating === undefined;
     return r.rating === Number(filterRating);
   });
 
@@ -61,13 +76,13 @@ export default function ReviewsPage() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-[#E7DCD3] pb-6">
         <div>
           <span className="text-xs font-bold uppercase tracking-widest text-[#9C7A5B]">
-            Google Ratings & Feedback
+            Google Ratings & Customer Voice
           </span>
           <h1 className="font-serif text-3xl sm:text-4xl lg:text-5xl font-black text-[#2D1B16]">
             Customer Reviews
           </h1>
           <p className="text-xs sm:text-sm text-[#7A6A5D] mt-1">
-            Real experiences shared by over 960+ loyal patrons across Vijayawada.
+            Authentic customer reviews stored in our database from over 960+ patrons across Vijayawada.
           </p>
         </div>
 
@@ -148,53 +163,75 @@ export default function ReviewsPage() {
             <Star className="w-3 h-3 fill-current" />
           </button>
         ))}
+        <button
+          onClick={() => setFilterRating('text-only')}
+          className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+            filterRating === 'text-only'
+              ? 'bg-[#2D1B16] text-white shadow-xs'
+              : 'bg-white text-[#5C4A3E] border border-[#E7DCD3] hover:bg-[#FAF4ED]'
+          }`}
+        >
+          Feedback Only
+        </button>
       </div>
 
       {/* Reviews Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredReviews.map((rev) => (
-          <div
-            key={rev.id}
-            className="bg-white rounded-2xl p-6 border border-[#E7DCD3] shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between space-y-4"
-          >
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <RatingStars rating={rev.rating} showScore={false} size="w-4 h-4" />
-                <span className="text-xs text-[#8D7B68]">{rev.date}</span>
-              </div>
+        {filteredReviews.map((rev) => {
+          const customerName = rev.customer_name || rev.author;
+          const reviewText = rev.review_text || rev.review;
+          const reviewDate = rev.review_date || rev.date;
+          const hasRating = rev.rating !== null && rev.rating !== undefined;
 
-              <p className="text-sm text-[#4A3B32] leading-relaxed italic">
-                "{rev.review}"
-              </p>
-            </div>
-
-            <div className="pt-3 border-t border-[#F2E8DF] space-y-2">
-              {rev.cakeOrdered && (
-                <div className="text-[11px] text-[#8D7B68]">
-                  <span className="font-semibold text-[#5C381E]">Ordered:</span> {rev.cakeOrdered}
-                </div>
-              )}
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold text-[#2D1B16] flex items-center gap-1">
-                    {rev.author}
-                    {rev.verified && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" title="Verified Customer" />}
-                  </h4>
-                  <p className="text-[10px] text-[#8D7B68]">{rev.location}</p>
+          return (
+            <div
+              key={rev.id}
+              className="bg-white rounded-2xl p-6 border border-[#E7DCD3] shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between space-y-4"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  {/* Show rating stars ONLY when actual rating is available */}
+                  {hasRating ? (
+                    <RatingStars rating={Number(rev.rating)} showScore={false} size="w-4 h-4" />
+                  ) : (
+                    <span className="text-[11px] font-semibold text-[#8D7B68] bg-[#FAF4ED] px-2.5 py-0.5 rounded-full border border-[#E7DCD3]">
+                      Customer Feedback
+                    </span>
+                  )}
+                  <span className="text-xs text-[#8D7B68]">{reviewDate}</span>
                 </div>
 
-                <button
-                  onClick={() => showToast('Thank you for your feedback!', 'info')}
-                  className="flex items-center gap-1 text-[11px] text-[#8D7B68] hover:text-[#2D1B16] cursor-pointer"
-                >
-                  <ThumbsUp className="w-3 h-3" />
-                  <span>{rev.likes || 0}</span>
-                </button>
+                {/* Customer Review Text */}
+                <p className="text-sm text-[#4A3B32] leading-relaxed italic">
+                  "{reviewText}"
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-[#F2E8DF] space-y-2">
+                {rev.cakeOrdered && (
+                  <div className="text-[11px] text-[#8D7B68]">
+                    <span className="font-semibold text-[#5C381E]">Ordered:</span> {rev.cakeOrdered}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    {/* Customer Name */}
+                    <h4 className="text-xs font-bold text-[#2D1B16] flex items-center gap-1">
+                      {customerName}
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" title="Verified Customer Review" />
+                    </h4>
+                    <p className="text-[10px] text-[#8D7B68]">{rev.location || 'Vijayawada'}</p>
+                  </div>
+
+                  <span className="text-[10px] font-semibold bg-[#FAF4ED] text-[#704828] px-2 py-0.5 rounded border border-[#E0D0C1]">
+                    {rev.source || 'Customer Review'}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* "Write a Review" Interactive Modal */}
@@ -216,34 +253,50 @@ export default function ReviewsPage() {
                 Review The Bread Basket
               </h3>
               <p className="text-xs text-[#7A6A5D]">
-                Your review helps other Vijayawada food lovers discover freshly baked happiness.
+                Your review will be stored in our database and helps other Vijayawada food lovers discover freshly baked happiness.
               </p>
             </div>
 
             <form onSubmit={handleSubmitReview} className="space-y-4">
-              {/* Star Rating Picker */}
+              {/* Star Rating Picker with 'No Rating' option */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase text-[#2D1B16]">Your Rating *</label>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase text-[#2D1B16]">Your Rating (Optional)</label>
+                  {rating === 'none' && (
+                    <span className="text-[11px] text-[#8D7B68] italic">No rating selected (text feedback only)</span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
                   {[1, 2, 3, 4, 5].map((star) => (
                     <button
                       key={star}
                       type="button"
-                      onClick={() => setRating(star)}
+                      onClick={() => setRating(String(star))}
                       className="p-1 cursor-pointer transition-transform hover:scale-110"
+                      title={`${star} Stars`}
                     >
                       <Star
                         className={`w-7 h-7 ${
-                          star <= rating
+                          rating !== 'none' && star <= Number(rating)
                             ? 'fill-[#D4AF37] text-[#D4AF37]'
                             : 'text-[#E0D5C7]'
                         }`}
                       />
                     </button>
                   ))}
-                  <span className="text-xs font-bold text-[#2D1B16] ml-2">
-                    {rating === 5 ? 'Exceptional! (5 Stars)' : `${rating} Stars`}
-                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => setRating('none')}
+                    className={`ml-2 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+                      rating === 'none'
+                        ? 'bg-[#2D1B16] text-white border-[#2D1B16]'
+                        : 'bg-[#FAF6F0] text-[#7A6A5D] border-[#DECBC0] hover:bg-[#EAE0D5]'
+                    }`}
+                  >
+                    No Rating
+                  </button>
                 </div>
               </div>
 
@@ -297,9 +350,10 @@ export default function ReviewsPage() {
 
               <button
                 type="submit"
-                className="w-full py-3.5 rounded-xl bg-[#2D1B16] hover:bg-[#4A2E18] text-white font-bold text-xs uppercase tracking-wider transition-colors shadow-md cursor-pointer border border-[#D4AF37]/30"
+                disabled={submitting}
+                className="w-full py-3.5 rounded-xl bg-[#2D1B16] hover:bg-[#4A2E18] text-white font-bold text-xs uppercase tracking-wider transition-colors shadow-md cursor-pointer border border-[#D4AF37]/30 disabled:opacity-50"
               >
-                Submit Review
+                {submitting ? 'Saving Review...' : 'Submit Review to Database'}
               </button>
             </form>
           </div>

@@ -13,14 +13,22 @@ import {
   Search, 
   RefreshCw, 
   Eye, 
+  EyeOff, 
   X, 
   AlertCircle, 
   CheckCircle2, 
-  Layers 
+  Layers, 
+  Star, 
+  MessageSquare, 
+  LogOut, 
+  ShieldCheck, 
+  Filter 
 } from 'lucide-react';
 import { useAdmin } from '../context/AdminContext';
 import { useToast } from '../context/ToastContext';
 import { CATEGORIES } from '../data/products';
+import AdminLoginGate from '../components/AdminLoginGate';
+import RatingStars from '../components/RatingStars';
 
 const ORDER_STATUSES = [
   'Pending',
@@ -34,10 +42,18 @@ const ORDER_STATUSES = [
 
 export default function AdminDashboard() {
   const { 
+    isAdminAuthenticated, 
+    adminUser, 
+    adminLogout, 
     products, 
     orders, 
     reservations, 
     customCakes, 
+    dbReviews, 
+    toggleReviewVisibility, 
+    deleteDbReview, 
+    addDbReview, 
+    refreshReviews, 
     updateOrderStatus, 
     addProduct, 
     updateProduct, 
@@ -49,7 +65,12 @@ export default function AdminDashboard() {
 
   const { showToast } = useToast();
 
-  const [activeTab, setActiveTab] = useState('orders'); // 'orders', 'products', 'reservations', 'cakes'
+  // If customer or unauthenticated user visits /admin, show strict authentication gate
+  if (!isAdminAuthenticated) {
+    return <AdminLoginGate />;
+  }
+
+  const [activeTab, setActiveTab] = useState('orders'); // 'orders', 'products', 'reservations', 'cakes', 'reviews'
 
   // Product Add / Edit Modal State
   const [productModalOpen, setProductModalOpen] = useState(false);
@@ -64,9 +85,21 @@ export default function AdminDashboard() {
     image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=800&q=80',
   });
 
+  // Review Add Modal State
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [reviewForm, setReviewForm] = useState({
+    customer_name: '',
+    review_text: '',
+    rating: '5',
+    review_date: 'Just now',
+    is_visible: true,
+  });
+
   // Filter & Search inside Admin
   const [orderSearch, setOrderSearch] = useState('');
   const [productSearch, setProductSearch] = useState('');
+  const [reviewSearch, setReviewSearch] = useState('');
+  const [reviewVisibilityFilter, setReviewVisibilityFilter] = useState('all'); // 'all', 'visible', 'hidden'
 
   // Overview metrics
   const totalRevenue = orders
@@ -74,7 +107,10 @@ export default function AdminDashboard() {
     .reduce((sum, o) => sum + (o.total || 0), 0);
 
   const pendingOrders = orders.filter((o) => o.status === 'Pending' || o.status === 'Preparing').length;
+  const visibleReviewsCount = dbReviews.filter((r) => r.is_visible).length;
+  const hiddenReviewsCount = dbReviews.length - visibleReviewsCount;
 
+  // Handlers for products
   const handleOpenAddProduct = () => {
     setEditingProduct(null);
     setProductForm({
@@ -118,6 +154,34 @@ export default function AdminDashboard() {
     setProductModalOpen(false);
   };
 
+  // Handlers for reviews
+  const handleSaveReview = async (e) => {
+    e.preventDefault();
+    if (!reviewForm.customer_name.trim() || !reviewForm.review_text.trim()) {
+      showToast('Please enter both customer name and review text.', 'error');
+      return;
+    }
+
+    const ratingVal = reviewForm.rating === 'none' ? null : Number(reviewForm.rating);
+
+    await addDbReview({
+      customer_name: reviewForm.customer_name,
+      review_text: reviewForm.review_text,
+      rating: ratingVal,
+      review_date: reviewForm.review_date || 'Just now',
+      is_visible: reviewForm.is_visible,
+    });
+
+    setReviewModalOpen(false);
+    setReviewForm({
+      customer_name: '',
+      review_text: '',
+      rating: '5',
+      review_date: 'Just now',
+      is_visible: true,
+    });
+  };
+
   const filteredOrders = orders.filter((o) => {
     if (!orderSearch) return true;
     const q = orderSearch.toLowerCase();
@@ -134,23 +198,40 @@ export default function AdminDashboard() {
     return p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q);
   });
 
+  const filteredReviews = dbReviews.filter((r) => {
+    if (reviewVisibilityFilter === 'visible' && !r.is_visible) return false;
+    if (reviewVisibilityFilter === 'hidden' && r.is_visible) return false;
+    if (!reviewSearch) return true;
+    const q = reviewSearch.toLowerCase();
+    return (
+      r.customer_name.toLowerCase().includes(q) ||
+      r.review_text.toLowerCase().includes(q) ||
+      r.id.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-8">
-      {/* Top Banner with Quick Actions */}
+      {/* Top Banner with Quick Actions & Owner Status */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E7DCD3] pb-6">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider bg-[#2D1B16] text-[#D4AF37] px-2.5 py-0.5 rounded-full">
-              Bakery Manager
+            <span className="text-xs font-bold uppercase tracking-wider bg-[#2D1B16] text-[#D4AF37] px-2.5 py-0.5 rounded-full flex items-center gap-1">
+              <ShieldCheck className="w-3.5 h-3.5" /> Owner Portal
             </span>
-            <span className="text-xs text-[#8D7B68]">Live LocalStorage Sync</span>
+            <span className="text-xs text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 font-semibold">
+              Authenticated Session
+            </span>
           </div>
           <h1 className="font-serif text-3xl sm:text-4xl font-black text-[#2D1B16] mt-1">
-            Admin Dashboard
+            Admin Management Dashboard
           </h1>
+          <p className="text-xs text-[#7A6A5D]">
+            Welcome, <strong>{adminUser?.name || 'Bakery Owner'}</strong> • Database: SQLite (Persistent)
+          </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={resetToDefaults}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-[#E7DCD3] hover:bg-[#FAF6F0] text-xs font-bold text-[#5C4A3E] transition-colors cursor-pointer"
@@ -166,6 +247,15 @@ export default function AdminDashboard() {
           >
             <Plus className="w-4 h-4 text-[#D4AF37]" />
             <span>Add Product</span>
+          </button>
+
+          <button
+            onClick={adminLogout}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-bold transition-colors cursor-pointer"
+            title="Log out of Admin Session"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Log Out</span>
           </button>
         </div>
       </div>
@@ -210,11 +300,13 @@ export default function AdminDashboard() {
 
         <div className="bg-white p-5 rounded-2xl border border-[#E7DCD3] shadow-xs space-y-1">
           <div className="flex items-center justify-between text-[#8D7B68]">
-            <span className="text-xs font-bold uppercase">Custom Cakes</span>
-            <Cake className="w-4 h-4 text-[#D81B60]" />
+            <span className="text-xs font-bold uppercase">Customer Reviews</span>
+            <MessageSquare className="w-4 h-4 text-[#D81B60]" />
           </div>
-          <p className="font-serif text-2xl font-black text-[#2D1B16]">{customCakes.length}</p>
-          <p className="text-[11px] text-[#7A6A5D]">Inquiries & requests</p>
+          <p className="font-serif text-2xl font-black text-[#2D1B16]">{dbReviews.length}</p>
+          <p className="text-[11px] text-emerald-700 font-semibold">
+            {visibleReviewsCount} visible • {hiddenReviewsCount} hidden
+          </p>
         </div>
       </div>
 
@@ -266,6 +358,18 @@ export default function AdminDashboard() {
         >
           <Cake className="w-3.5 h-3.5" />
           <span>Custom Cake Requests ({customCakes.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('reviews')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+            activeTab === 'reviews'
+              ? 'bg-[#2D1B16] text-white shadow-xs ring-2 ring-[#D4AF37]/50'
+              : 'text-[#5C4A3E] hover:bg-[#FAF4ED]'
+          }`}
+        >
+          <MessageSquare className="w-3.5 h-3.5 text-[#D4AF37]" />
+          <span>Customer Reviews ({dbReviews.length})</span>
         </button>
       </div>
 
@@ -384,7 +488,7 @@ export default function AdminDashboard() {
 
             <button
               onClick={handleOpenAddProduct}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#2D1B16] text-white text-xs font-bold hover:bg-[#4A2E18] transition-colors"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#2D1B16] text-white text-xs font-bold hover:bg-[#4A2E18] transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4 text-[#D4AF37]" />
               <span>Add New Bakery Item</span>
@@ -445,7 +549,7 @@ export default function AdminDashboard() {
                         <div className="inline-flex items-center gap-2">
                           <button
                             onClick={() => handleOpenEditProduct(p)}
-                            className="p-1.5 rounded-lg text-[#5C4A3E] hover:bg-[#FAF4ED] transition-colors"
+                            className="p-1.5 rounded-lg text-[#5C4A3E] hover:bg-[#FAF4ED] transition-colors cursor-pointer"
                             title="Edit"
                           >
                             <Edit className="w-3.5 h-3.5" />
@@ -456,7 +560,7 @@ export default function AdminDashboard() {
                                 deleteProduct(p.id);
                               }
                             }}
-                            className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                            className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
                             title="Delete"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -511,7 +615,7 @@ export default function AdminDashboard() {
                       <select
                         value={res.status}
                         onChange={(e) => updateReservationStatus(res.id, e.target.value)}
-                        className="p-1 rounded-lg text-xs font-bold border border-[#DECBC0] bg-[#FAF6F0] focus:outline-none"
+                        className="p-1 rounded-lg text-xs font-bold border border-[#DECBC0] bg-[#FAF6F0] focus:outline-none cursor-pointer"
                       >
                         <option value="Confirmed">Confirmed</option>
                         <option value="Seated">Seated</option>
@@ -569,7 +673,7 @@ export default function AdminDashboard() {
                       <select
                         value={cake.status}
                         onChange={(e) => updateCustomCakeStatus(cake.id, e.target.value)}
-                        className="p-1 rounded-lg text-xs font-bold border border-[#DECBC0] bg-[#FAF6F0] focus:outline-none"
+                        className="p-1 rounded-lg text-xs font-bold border border-[#DECBC0] bg-[#FAF6F0] focus:outline-none cursor-pointer"
                       >
                         <option value="Under Review">Under Review</option>
                         <option value="Confirmed">Confirmed</option>
@@ -583,6 +687,191 @@ export default function AdminDashboard() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: CUSTOMER REVIEWS MANAGEMENT (PERSISTENT DB) */}
+      {activeTab === 'reviews' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            {/* Search & Filter */}
+            <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+              <div className="relative w-full sm:w-64">
+                <Search className="w-4 h-4 text-[#8D7B68] absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={reviewSearch}
+                  onChange={(e) => setReviewSearch(e.target.value)}
+                  placeholder="Search reviewer or text..."
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-[#E7DCD3] bg-white text-[#2D1B16] focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-[#E7DCD3] text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setReviewVisibilityFilter('all')}
+                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                    reviewVisibilityFilter === 'all' ? 'bg-[#2D1B16] text-white' : 'text-[#5C4A3E]'
+                  }`}
+                >
+                  All ({dbReviews.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReviewVisibilityFilter('visible')}
+                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                    reviewVisibilityFilter === 'visible' ? 'bg-emerald-700 text-white' : 'text-[#5C4A3E]'
+                  }`}
+                >
+                  Visible ({visibleReviewsCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReviewVisibilityFilter('hidden')}
+                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                    reviewVisibilityFilter === 'hidden' ? 'bg-amber-800 text-white' : 'text-[#5C4A3E]'
+                  }`}
+                >
+                  Hidden ({hiddenReviewsCount})
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={refreshReviews}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-[#E7DCD3] hover:bg-[#FAF6F0] text-xs font-bold text-[#5C4A3E] transition-colors cursor-pointer"
+                title="Reload from SQLite Database"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Sync DB</span>
+              </button>
+
+              <button
+                onClick={() => setReviewModalOpen(true)}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#2D1B16] hover:bg-[#4A2E18] text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
+              >
+                <Plus className="w-4 h-4 text-[#D4AF37]" />
+                <span>Add Customer Review</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-[#E7DCD3] shadow-xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-[#FAF4ED] text-[#5C381E] border-b border-[#E7DCD3] font-bold uppercase tracking-wider">
+                  <tr>
+                    <th className="py-3 px-4">Reviewer</th>
+                    <th className="py-3 px-4">Review Content</th>
+                    <th className="py-3 px-4">Rating</th>
+                    <th className="py-3 px-4">Date & Source</th>
+                    <th className="py-3 px-4">Website Visibility</th>
+                    <th className="py-3 px-4 text-right">Owner Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#F2E8DF]">
+                  {filteredReviews.length > 0 ? (
+                    filteredReviews.map((rev) => (
+                      <tr key={rev.id} className="hover:bg-[#FAF8F5] transition-colors">
+                        <td className="py-3.5 px-4">
+                          <span className="font-extrabold text-[#2D1B16] block">{rev.customer_name}</span>
+                          <span className="text-[10px] text-[#8D7B68] font-mono">#{rev.id}</span>
+                        </td>
+
+                        <td className="py-3.5 px-4 max-w-sm">
+                          <p className="text-[#4A3B32] italic line-clamp-2">
+                            "{rev.review_text}"
+                          </p>
+                        </td>
+
+                        <td className="py-3.5 px-4">
+                          {rev.rating !== null && rev.rating !== undefined ? (
+                            <div className="flex items-center gap-1">
+                              <Star className="w-3.5 h-3.5 fill-[#D4AF37] text-[#D4AF37]" />
+                              <span className="font-black text-[#2D1B16]">{Number(rev.rating).toFixed(1)}</span>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium border border-gray-200">
+                              No rating provided
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="py-3.5 px-4">
+                          <span className="font-semibold text-[#2D1B16] block">{rev.review_date}</span>
+                          <span className="text-[10px] text-[#8D7B68]">{rev.source || 'Customer Review'}</span>
+                        </td>
+
+                        <td className="py-3.5 px-4">
+                          {rev.is_visible ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-0.5 rounded-full">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              Visible on Site
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-300 px-2.5 py-0.5 rounded-full">
+                              <EyeOff className="w-3 h-3 text-amber-600" />
+                              Hidden
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-right">
+                          <div className="inline-flex items-center gap-2 justify-end">
+                            {/* Toggle Show/Hide button */}
+                            <button
+                              type="button"
+                              onClick={() => toggleReviewVisibility(rev.id, !rev.is_visible)}
+                              className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer border ${
+                                rev.is_visible
+                                  ? 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
+                                  : 'bg-emerald-50 text-emerald-900 border-emerald-200 hover:bg-emerald-100'
+                              }`}
+                              title={rev.is_visible ? 'Hide review from website' : 'Show review on website'}
+                            >
+                              {rev.is_visible ? (
+                                <>
+                                  <EyeOff className="w-3.5 h-3.5" />
+                                  <span className="hidden sm:inline">Hide</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span className="hidden sm:inline">Show</span>
+                                </>
+                              )}
+                            </button>
+
+                            {/* Delete button */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm(`Permanently delete review from ${rev.customer_name}?`)) {
+                                  deleteDbReview(rev.id);
+                                }
+                              }}
+                              className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors cursor-pointer border border-transparent hover:border-red-200"
+                              title="Delete Review"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-xs text-[#7A6A5D]">
+                        No reviews match the selected filter.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -692,15 +981,124 @@ export default function AdminDashboard() {
                 <button
                   type="button"
                   onClick={() => setProductModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-[#DECBC0] bg-[#FAF6F0] text-[#2D1B16] font-bold text-xs hover:bg-[#EAE0D5] transition-colors"
+                  className="flex-1 py-2.5 rounded-xl border border-[#DECBC0] bg-[#FAF6F0] text-[#2D1B16] font-bold text-xs hover:bg-[#EAE0D5] transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-[#2D1B16] hover:bg-[#4A2E18] text-white font-bold text-xs transition-colors shadow-sm"
+                  className="flex-1 py-2.5 rounded-xl bg-[#2D1B16] hover:bg-[#4A2E18] text-white font-bold text-xs transition-colors shadow-sm cursor-pointer"
                 >
                   {editingProduct ? 'Save Changes' : 'Create Product'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Review Add Modal for Owner */}
+      {reviewModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full space-y-4 shadow-2xl animate-scale-up border border-[#E7DCD3] relative">
+            <button
+              onClick={() => setReviewModalOpen(false)}
+              className="absolute top-4 right-4 p-2 text-[#8D7B68] hover:text-[#2D1B16] cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="space-y-1">
+              <span className="text-xs font-bold uppercase tracking-wider text-[#D4AF37]">
+                Admin Review Tool
+              </span>
+              <h3 className="font-serif text-2xl font-black text-[#2D1B16]">
+                Add Customer Review to Database
+              </h3>
+              <p className="text-xs text-[#7A6A5D]">
+                Store authentic feedback. You can set an exact rating or choose "No rating" if the customer did not provide one.
+              </p>
+            </div>
+
+            <form onSubmit={handleSaveReview} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold uppercase text-[#2D1B16]">Customer Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={reviewForm.customer_name}
+                  onChange={(e) => setReviewForm({ ...reviewForm, customer_name: e.target.value })}
+                  placeholder="e.g. Ramesh Chandra"
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-[#E7DCD3] bg-[#FAF6F0] text-[#2D1B16] focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold uppercase text-[#2D1B16]">Rating (Optional)</label>
+                  <select
+                    value={reviewForm.rating}
+                    onChange={(e) => setReviewForm({ ...reviewForm, rating: e.target.value })}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-[#E7DCD3] bg-[#FAF6F0] text-[#2D1B16] focus:outline-none cursor-pointer"
+                  >
+                    <option value="5">5 Stars (Excellent)</option>
+                    <option value="4">4 Stars (Great)</option>
+                    <option value="3">3 Stars (Average)</option>
+                    <option value="2">2 Stars (Below Average)</option>
+                    <option value="1">1 Star (Poor)</option>
+                    <option value="none">No Rating (Text Only)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold uppercase text-[#2D1B16]">Review Date</label>
+                  <input
+                    type="text"
+                    value={reviewForm.review_date}
+                    onChange={(e) => setReviewForm({ ...reviewForm, review_date: e.target.value })}
+                    placeholder="e.g. 2 days ago"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-[#E7DCD3] bg-[#FAF6F0] text-[#2D1B16] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold uppercase text-[#2D1B16]">Review Text *</label>
+                <textarea
+                  required
+                  rows={3}
+                  value={reviewForm.review_text}
+                  onChange={(e) => setReviewForm({ ...reviewForm, review_text: e.target.value })}
+                  placeholder="Exact feedback text from the customer..."
+                  className="w-full p-2.5 text-xs rounded-xl border border-[#E7DCD3] bg-[#FAF6F0] text-[#2D1B16] focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-xl bg-[#FAF6F0] border border-[#E7DCD3]">
+                <label className="flex items-center gap-2 text-xs font-bold text-[#2D1B16] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={reviewForm.is_visible}
+                    onChange={(e) => setReviewForm({ ...reviewForm, is_visible: e.target.checked })}
+                    className="accent-[#2D1B16]"
+                  />
+                  <span>Publish Immediately (Visible on Website)</span>
+                </label>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setReviewModalOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-[#DECBC0] bg-[#FAF6F0] text-[#2D1B16] font-bold text-xs hover:bg-[#EAE0D5] transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-[#2D1B16] hover:bg-[#4A2E18] text-white font-bold text-xs transition-colors shadow-sm cursor-pointer"
+                >
+                  Save to Database
                 </button>
               </div>
             </form>

@@ -2,6 +2,9 @@ import React from 'react';
 import { Star } from 'lucide-react';
 
 export default function RatingStars({ rating = 4.3, showScore = true, reviewsCount = null, size = 'w-4 h-4' }) {
+  if (rating === null || rating === undefined || isNaN(rating)) {
+    return null;
+  }
   const fullStars = Math.floor(rating);
   const hasHalfStar = rating % 1 >= 0.3;
 

@@ -405,21 +405,27 @@ export default function HomePage() {
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-3">
-                    <RatingStars rating={rev.rating} showScore={false} size="w-4 h-4" />
-                    <span className="text-xs text-[#8D7B68]">{rev.date}</span>
+                    {rev.rating !== null && rev.rating !== undefined ? (
+                      <RatingStars rating={rev.rating} showScore={false} size="w-4 h-4" />
+                    ) : (
+                      <span className="text-[11px] font-semibold text-[#8D7B68] bg-[#FAF4ED] px-2 py-0.5 rounded-full border border-[#E7DCD3]">
+                        Customer Feedback
+                      </span>
+                    )}
+                    <span className="text-xs text-[#8D7B68]">{rev.review_date || rev.date}</span>
                   </div>
                   <p className="text-sm text-[#4A3B32] italic leading-relaxed mb-4">
-                    "{rev.review}"
+                    "{rev.review_text || rev.review}"
                   </p>
                 </div>
 
                 <div className="pt-3 border-t border-[#F2E8DF] flex items-center justify-between">
                   <div>
                     <h4 className="text-xs font-bold text-[#2D1B16] flex items-center gap-1">
-                      {rev.author}
+                      {rev.customer_name || rev.author}
                       {rev.verified && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
                     </h4>
-                    <p className="text-[11px] text-[#8D7B68]">{rev.location}</p>
+                    <p className="text-[11px] text-[#8D7B68]">{rev.location || 'Vijayawada'}</p>
                   </div>
                   {rev.cakeOrdered && (
                     <span className="text-[10px] bg-[#FAF4ED] text-[#704828] px-2 py-0.5 rounded font-medium max-w-[120px] truncate">
